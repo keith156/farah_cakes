@@ -1,0 +1,7 @@
+{
+  "name": "Farah Cakes",
+  "description": "A luxury boutique bakery website for Farah Cakes featuring a premium showcase, admin dashboard for management, and seamless WhatsApp ordering.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
