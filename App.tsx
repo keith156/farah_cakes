@@ -10,18 +10,33 @@ import CartModal from './components/CartModal';
 
 const App: React.FC = () => {
   const [cakes, setCakes] = useState<Cake[]>(() => {
-    const saved = localStorage.getItem('farah_cakes');
-    return saved ? JSON.parse(saved) : INITIAL_CAKES;
+    try {
+      const saved = localStorage.getItem('farah_cakes');
+      return saved ? JSON.parse(saved) : INITIAL_CAKES;
+    } catch (e) {
+      console.error("Failed to load cakes from storage", e);
+      return INITIAL_CAKES;
+    }
   });
 
   const [coupons, setCoupons] = useState<Coupon[]>(() => {
-    const saved = localStorage.getItem('farah_coupons');
-    return saved ? JSON.parse(saved) : INITIAL_COUPONS;
+    try {
+      const saved = localStorage.getItem('farah_coupons');
+      return saved ? JSON.parse(saved) : INITIAL_COUPONS;
+    } catch (e) {
+      console.error("Failed to load coupons from storage", e);
+      return INITIAL_COUPONS;
+    }
   });
 
   const [categories, setCategories] = useState<string[]>(() => {
-    const saved = localStorage.getItem('farah_categories');
-    return saved ? JSON.parse(saved) : INITIAL_CATEGORIES;
+    try {
+      const saved = localStorage.getItem('farah_categories');
+      return saved ? JSON.parse(saved) : INITIAL_CATEGORIES;
+    } catch (e) {
+      console.error("Failed to load categories from storage", e);
+      return INITIAL_CATEGORIES;
+    }
   });
 
   const [cart, setCart] = useState<CartItem[]>([]);
