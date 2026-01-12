@@ -22,7 +22,7 @@ const Navbar: React.FC<NavbarProps> = ({ onCartClick, cartCount }) => {
       <div className={`max-w-7xl w-full flex items-center justify-between transition-all duration-500 px-6 py-3 rounded-2xl ${
         isScrolled ? 'glass shadow-xl shadow-black/5 py-4' : 'bg-transparent'
       }`}>
-        <div className="flex items-center gap-3 group cursor-pointer">
+        <div className="flex items-center gap-3 group cursor-pointer" onClick={() => window.scrollTo({top: 0, behavior: 'smooth'})}>
           <div className="w-10 h-10 bg-midnight rounded-full flex items-center justify-center text-white transition-transform group-hover:rotate-[360deg] duration-700">
             <span className="font-serif font-bold italic">F</span>
           </div>
@@ -32,7 +32,6 @@ const Navbar: React.FC<NavbarProps> = ({ onCartClick, cartCount }) => {
         <div className="flex items-center gap-8">
           <div className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-600 uppercase tracking-widest">
             <a href="#catalogue" className="hover:text-rose-gold transition">Shop</a>
-            <a href="#" className="hover:text-rose-gold transition">Our Story</a>
           </div>
           
           <button 

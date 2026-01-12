@@ -1,7 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
 import { Cake, Coupon, AdminView } from '../types';
-import { generateDescription } from '../services/geminiService';
 
 interface AdminPanelProps {
   cakes: Cake[];
@@ -22,7 +21,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ cakes, setCakes, coupons, setCo
   const [activeView, setActiveView] = useState<AdminView>(AdminView.DASHBOARD);
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [formCake, setFormCake] = useState<Partial<Cake>>({ category: categories[0] || 'Birthday' });
-  const [isGenerating, setIsGenerating] = useState(false);
   
   const [newCoupon, setNewCoupon] = useState({ code: '', discountPercent: 10 });
   const [newCategory, setNewCategory] = useState('');
@@ -65,14 +63,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ cakes, setCakes, coupons, setCo
     setFormCake({ category: categories[0] || 'Birthday' });
     setIsEditing(null);
     setActiveView(AdminView.CAKES);
-  };
-
-  const handleAutoDescribe = async () => {
-    if (!formCake.name) return;
-    setIsGenerating(true);
-    const desc = await generateDescription(formCake.name, formCake.category || categories[0] || 'Birthday');
-    setFormCake(prev => ({ ...prev, description: desc }));
-    setIsGenerating(false);
   };
 
   const handleDeleteCake = (id: string) => {
@@ -189,7 +179,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ cakes, setCakes, coupons, setCo
                     <h3 className="text-4xl font-serif text-midnight mb-8">{isEditing ? 'Edit Masterpiece' : 'Add New Creation'}</h3>
                     <div className="bg-white rounded-[2.5rem] p-10 shadow-xl shadow-black/5">
                         <form onSubmit={handleSaveCake} className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-                            {/* Visual First as requested */}
                             <div className="space-y-8 flex flex-col">
                                 <div>
                                     <label className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Masterpiece Visual</label>
@@ -263,17 +252,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ cakes, setCakes, coupons, setCo
                                     </div>
                                 </div>
                                 <div>
-                                    <div className="flex justify-between mb-2">
-                                        <label className="block text-xs font-bold uppercase tracking-widest text-slate-400">Description</label>
-                                        <button 
-                                            type="button" 
-                                            onClick={handleAutoDescribe}
-                                            disabled={isGenerating || !formCake.name}
-                                            className="text-rose-gold text-[10px] uppercase font-bold tracking-[0.1em] hover:text-midnight disabled:opacity-30"
-                                        >
-                                            {isGenerating ? 'AI Writing...' : '✨ Auto-Write'}
-                                        </button>
-                                    </div>
+                                    <label className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Description</label>
                                     <textarea 
                                         required
                                         value={formCake.description || ''}
@@ -283,7 +262,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ cakes, setCakes, coupons, setCo
                                     />
                                 </div>
                                 
-                                {/* Mobile/Small screen button */}
                                 <button className="lg:hidden w-full bg-midnight text-white py-5 rounded-2xl font-bold uppercase tracking-widest text-sm hover:bg-slate-800 transition shadow-xl">
                                     {isEditing ? 'Save Changes' : 'Launch Listing'}
                                 </button>

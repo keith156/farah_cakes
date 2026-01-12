@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Cake, CartItem, Coupon, AdminView } from './types';
 import { INITIAL_CAKES, INITIAL_COUPONS, INITIAL_CATEGORIES, WHATSAPP_NUMBER } from './constants';
 import Navbar from './components/Navbar';
@@ -9,6 +9,8 @@ import AdminPanel from './components/AdminPanel';
 import CartModal from './components/CartModal';
 
 const App: React.FC = () => {
+  const catalogueRef = useRef<HTMLElement>(null);
+
   const [cakes, setCakes] = useState<Cake[]>(() => {
     try {
       const saved = localStorage.getItem('farah_cakes');
@@ -83,6 +85,16 @@ const App: React.FC = () => {
     }));
   };
 
+  const handleSpecialRequest = () => {
+    const message = encodeURIComponent("Hello Farah Cakes! I'd like to inquire about a special custom cake request.");
+    window.open(`https://wa.me/${WHATSAPP_NUMBER.replace('+', '')}?text=${message}`, '_blank');
+  };
+
+  const scrollToCatalogue = (e: React.MouseEvent) => {
+    e.preventDefault();
+    catalogueRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
   const displayCategories = ['All', ...categories];
   const filteredCakes = activeCategory === 'All' 
     ? cakes 
@@ -118,14 +130,14 @@ const App: React.FC = () => {
               
               {/* Buttons side by side */}
               <div className="flex flex-row justify-center items-center gap-4 md:gap-6">
-                <a 
-                  href="#catalogue"
+                <button 
+                  onClick={scrollToCatalogue}
                   className="bg-rose-gold hover:bg-rose-gold-dark text-white px-8 md:px-12 py-4 md:py-5 rounded-full font-bold uppercase tracking-widest text-[10px] md:text-xs transition duration-300 shadow-2xl shrink-0"
                 >
                   View Collection
-                </a>
+                </button>
                 <button 
-                  onClick={() => setIsAdminOpen(true)}
+                  onClick={handleSpecialRequest}
                   className="border-2 border-white/30 text-white hover:bg-white hover:text-midnight px-8 md:px-12 py-4 md:py-5 rounded-full font-bold uppercase tracking-widest text-[10px] md:text-xs transition duration-300 bg-white/10 backdrop-blur-md shrink-0"
                 >
                   Special Request
@@ -135,15 +147,20 @@ const App: React.FC = () => {
           </div>
 
           {/* Scroll Down Arrow */}
-          <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-20 animate-bounce cursor-pointer opacity-70 hover:opacity-100 transition-opacity">
-            <a href="#catalogue">
-              <i className="fa-solid fa-chevron-down text-white text-2xl"></i>
-            </a>
-          </div>
+          <button 
+            onClick={scrollToCatalogue}
+            className="absolute bottom-10 left-1/2 -translate-x-1/2 z-20 animate-bounce cursor-pointer opacity-70 hover:opacity-100 transition-opacity"
+          >
+            <i className="fa-solid fa-chevron-down text-white text-2xl"></i>
+          </button>
         </section>
 
         {/* Collection Section */}
-        <section id="catalogue" className="max-w-7xl mx-auto px-6 py-24 relative">
+        <section 
+          id="catalogue" 
+          ref={catalogueRef}
+          className="max-w-7xl mx-auto px-6 py-24 relative scroll-mt-20"
+        >
           <div className="flex flex-col md:flex-row md:items-end justify-between mb-16 gap-8">
             <div className="max-w-xl text-center md:text-left">
               <h2 className="text-4xl md:text-5xl font-serif text-midnight mb-6">Our Seasonal Collection</h2>
