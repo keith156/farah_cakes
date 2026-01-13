@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Cake, Coupon, AdminView } from '../types';
+import { supabase } from '../services/supabaseClient';
 
 interface AdminPanelProps {
   cakes: Cake[];
@@ -24,8 +25,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ cakes, setCakes, coupons, setCo
   
   const [newCoupon, setNewCoupon] = useState({ code: '', discountPercent: 10 });
   const [newCategory, setNewCategory] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
-  // Update default category in form if categories change
   useEffect(() => {
     if (!formCake.category && categories.length > 0) {
       setFormCake(prev => ({ ...prev, category: categories[0] }));
@@ -44,29 +45,61 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ cakes, setCakes, coupons, setCo
 
   const handleSaveCake = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cakeToSave = {
-      ...formCake,
-      id: isEditing || Date.now().toString(),
-      name: formCake.name || 'Unnamed Cake',
-      description: formCake.description || 'No description provided.',
-      price: Number(formCake.price) || 0,
-      imageUrl: formCake.imageUrl || 'https://picsum.photos/800/600',
-      category: formCake.category || categories[0] || 'General'
-    } as Cake;
-
-    if (isEditing) {
-      setCakes(prev => prev.map(c => c.id === isEditing ? cakeToSave : c));
-    } else {
-      setCakes(prev => [cakeToSave, ...prev]);
+    if (!supabase) {
+      alert("Database not connected. Changes will only be temporary.");
+      return;
     }
-    
-    setFormCake({ category: categories[0] || 'Birthday' });
-    setIsEditing(null);
-    setActiveView(AdminView.CAKES);
+
+    setIsSaving(true);
+    try {
+      const cakeData = {
+        name: formCake.name || 'Unnamed Cake',
+        description: formCake.description || 'No description.',
+        price: Number(formCake.price) || 0,
+        image_url: formCake.imageUrl || 'https://picsum.photos/800/600',
+        category_name: formCake.category || categories[0] || 'Birthday'
+      };
+
+      if (isEditing) {
+        const { error } = await supabase.from('cakes').update(cakeData).eq('id', isEditing);
+        if (error) throw error;
+        setCakes(prev => prev.map(c => c.id === isEditing ? { ...c, ...cakeData, imageUrl: cakeData.image_url, category: cakeData.category_name } : c));
+      } else {
+        const { data, error } = await supabase.from('cakes').insert([cakeData]).select();
+        if (error) throw error;
+        if (data && data[0]) {
+            const newCake: Cake = {
+                id: data[0].id,
+                name: data[0].name,
+                description: data[0].description,
+                price: data[0].price,
+                imageUrl: data[0].image_url,
+                category: data[0].category_name
+            };
+            setCakes(prev => [newCake, ...prev]);
+        }
+      }
+      
+      setFormCake({ category: categories[0] || 'Birthday' });
+      setIsEditing(null);
+      setActiveView(AdminView.CAKES);
+    } catch (err) {
+      console.error("Database Save Error:", err);
+      alert("Failed to save to database. Check your Supabase configuration.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleDeleteCake = (id: string) => {
+  const handleDeleteCake = async (id: string) => {
     if (window.confirm('Delete this cake permanently?')) {
+      if (supabase) {
+        const { error } = await supabase.from('cakes').delete().eq('id', id);
+        if (error) {
+            alert("Delete failed.");
+            return;
+        }
+      }
       setCakes(prev => prev.filter(c => c.id !== id));
     }
   };
@@ -82,17 +115,53 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ cakes, setCakes, coupons, setCo
     }
   };
 
-  const handleAddCategory = () => {
+  const handleAddCategory = async () => {
     if (newCategory && !categories.includes(newCategory)) {
+      if (supabase) {
+        const { error } = await supabase.from('categories').insert([{ name: newCategory }]);
+        if (error) {
+            alert("Failed to add category to cloud.");
+            return;
+        }
+      }
       setCategories(prev => [...prev, newCategory]);
       setNewCategory('');
     }
   };
 
-  const handleDeleteCategory = (cat: string) => {
-    if (window.confirm(`Delete category "${cat}"? Cakes currently in this category will remain, but the category won't show in the shop filters if no cakes are left.`)) {
+  const handleDeleteCategory = async (cat: string) => {
+    if (window.confirm(`Delete category "${cat}"?`)) {
+      if (supabase) {
+        const { error } = await supabase.from('categories').delete().eq('name', cat);
+        if (error) {
+            alert("Delete failed. Check if cakes are linked to this category.");
+            return;
+        }
+      }
       setCategories(prev => prev.filter(c => c !== cat));
     }
+  };
+
+  const handleAddCoupon = async () => {
+      if(newCoupon.code && supabase) {
+          const { error } = await supabase.from('coupons').insert([{ 
+              code: newCoupon.code, 
+              discount_percent: newCoupon.discountPercent 
+          }]);
+          if (error) {
+              alert("Coupon already exists or error occurred.");
+              return;
+          }
+          setCoupons(prev => [...prev, newCoupon]);
+          setNewCoupon({code: '', discountPercent: 10});
+      }
+  };
+
+  const handleDeleteCoupon = async (code: string) => {
+      if (supabase) {
+          await supabase.from('coupons').delete().eq('code', code);
+      }
+      setCoupons(prev => prev.filter(c => c.code !== code));
   };
 
   if (!isAuthenticated) {
@@ -136,7 +205,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ cakes, setCakes, coupons, setCo
 
   return (
     <div className="fixed inset-0 z-[100] bg-[#F8F9FA] flex flex-col md:flex-row">
-      {/* Sidebar Nav */}
       <aside className="w-full md:w-64 bg-midnight text-white flex flex-col p-8 shrink-0">
         <div className="flex items-center gap-4 mb-12">
             <div className="w-10 h-10 bg-rose-gold rounded-xl flex items-center justify-center">
@@ -154,7 +222,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ cakes, setCakes, coupons, setCo
             ].map(item => (
                 <button 
                     key={item.id}
-                    onClick={() => setActiveView(item.id as AdminView)}
+                    onClick={() => { setActiveView(item.id as AdminView); setIsEditing(null); }}
                     className={`flex items-center gap-4 px-6 py-4 rounded-2xl text-sm font-bold uppercase tracking-widest transition ${
                         activeView === item.id ? 'bg-rose-gold text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-white/5'
                     }`}
@@ -171,7 +239,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ cakes, setCakes, coupons, setCo
         </button>
       </aside>
 
-      {/* Main Content Area */}
       <main className="flex-grow overflow-y-auto p-6 md:p-12">
         <div className="max-w-5xl mx-auto">
             {activeView === AdminView.DASHBOARD && (
@@ -200,8 +267,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ cakes, setCakes, coupons, setCo
                                     </div>
                                 </div>
                                 
-                                <button className="hidden lg:block w-full bg-midnight text-white py-5 rounded-2xl font-bold uppercase tracking-widest text-sm hover:bg-slate-800 transition shadow-xl mt-auto">
-                                    {isEditing ? 'Save Changes' : 'Launch Listing'}
+                                <button 
+                                    disabled={isSaving}
+                                    className="hidden lg:block w-full bg-midnight text-white py-5 rounded-2xl font-bold uppercase tracking-widest text-sm hover:bg-slate-800 transition shadow-xl mt-auto disabled:opacity-50"
+                                >
+                                    {isSaving ? 'Syncing...' : (isEditing ? 'Save Changes' : 'Launch Listing')}
                                 </button>
                                 {isEditing && (
                                     <button 
@@ -262,8 +332,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ cakes, setCakes, coupons, setCo
                                     />
                                 </div>
                                 
-                                <button className="lg:hidden w-full bg-midnight text-white py-5 rounded-2xl font-bold uppercase tracking-widest text-sm hover:bg-slate-800 transition shadow-xl">
-                                    {isEditing ? 'Save Changes' : 'Launch Listing'}
+                                <button 
+                                    disabled={isSaving}
+                                    className="lg:hidden w-full bg-midnight text-white py-5 rounded-2xl font-bold uppercase tracking-widest text-sm hover:bg-slate-800 transition shadow-xl disabled:opacity-50"
+                                >
+                                    {isSaving ? 'Syncing...' : (isEditing ? 'Save Changes' : 'Launch Listing')}
                                 </button>
                                 {isEditing && (
                                     <button 
@@ -354,11 +427,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ cakes, setCakes, coupons, setCo
                                 </button>
                             </div>
                         ))}
-                        {categories.length === 0 && (
-                          <div className="col-span-full py-12 text-center text-slate-400 bg-white/50 rounded-3xl border-2 border-dashed border-slate-200">
-                             No categories added yet.
-                          </div>
-                        )}
                     </div>
                 </div>
             )}
@@ -388,7 +456,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ cakes, setCakes, coupons, setCo
                                 />
                             </div>
                             <button 
-                                onClick={() => { if(newCoupon.code) { setCoupons(prev => [...prev, newCoupon]); setNewCoupon({code: '', discountPercent: 10}); } }}
+                                onClick={handleAddCoupon}
                                 className="bg-midnight text-white py-4 rounded-2xl font-bold uppercase tracking-widest text-xs h-[56px] hover:bg-slate-800 transition"
                             >
                                 Generate Coupon
@@ -404,7 +472,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ cakes, setCakes, coupons, setCo
                                     <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">{c.discountPercent}% OFF</p>
                                 </div>
                                 <button 
-                                    onClick={() => setCoupons(prev => prev.filter((_, idx) => idx !== i))}
+                                    onClick={() => handleDeleteCoupon(c.code)}
                                     className="w-10 h-10 bg-slate-50 rounded-full flex items-center justify-center text-red-300 hover:text-red-500 hover:bg-red-50 transition"
                                 >
                                     <i className="fa-solid fa-trash-can text-sm"></i>

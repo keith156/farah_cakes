@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Cake, CartItem, Coupon, AdminView } from './types';
 import { INITIAL_CAKES, INITIAL_COUPONS, INITIAL_CATEGORIES, WHATSAPP_NUMBER } from './constants';
+import { supabase } from './services/supabaseClient';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import CakeCard from './components/CakeCard';
@@ -11,52 +12,62 @@ import CartModal from './components/CartModal';
 const App: React.FC = () => {
   const catalogueRef = useRef<HTMLElement>(null);
 
-  const [cakes, setCakes] = useState<Cake[]>(() => {
-    try {
-      const saved = localStorage.getItem('farah_cakes');
-      return saved ? JSON.parse(saved) : INITIAL_CAKES;
-    } catch (e) {
-      console.error("Failed to load cakes from storage", e);
-      return INITIAL_CAKES;
-    }
-  });
-
-  const [coupons, setCoupons] = useState<Coupon[]>(() => {
-    try {
-      const saved = localStorage.getItem('farah_coupons');
-      return saved ? JSON.parse(saved) : INITIAL_COUPONS;
-    } catch (e) {
-      console.error("Failed to load coupons from storage", e);
-      return INITIAL_COUPONS;
-    }
-  });
-
-  const [categories, setCategories] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem('farah_categories');
-      return saved ? JSON.parse(saved) : INITIAL_CATEGORIES;
-    } catch (e) {
-      console.error("Failed to load categories from storage", e);
-      return INITIAL_CATEGORIES;
-    }
-  });
+  const [cakes, setCakes] = useState<Cake[]>(INITIAL_CAKES);
+  const [coupons, setCoupons] = useState<Coupon[]>(INITIAL_COUPONS);
+  const [categories, setCategories] = useState<string[]>(INITIAL_CATEGORIES);
+  const [isLoading, setIsLoading] = useState(true);
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string>('All');
 
+  // Fetch data from Supabase on mount
   useEffect(() => {
-    localStorage.setItem('farah_cakes', JSON.stringify(cakes));
-  }, [cakes]);
+    const fetchData = async () => {
+      if (!supabase) {
+        console.warn("Supabase not configured. Using default sample data.");
+        setIsLoading(false);
+        return;
+      }
 
-  useEffect(() => {
-    localStorage.setItem('farah_coupons', JSON.stringify(coupons));
-  }, [coupons]);
+      try {
+        const [cakesRes, categoriesRes, couponsRes] = await Promise.all([
+          supabase.from('cakes').select('*').order('created_at', { ascending: false }),
+          supabase.from('categories').select('name'),
+          supabase.from('coupons').select('*')
+        ]);
 
-  useEffect(() => {
-    localStorage.setItem('farah_categories', JSON.stringify(categories));
-  }, [categories]);
+        if (cakesRes.data && cakesRes.data.length > 0) {
+          setCakes(cakesRes.data.map(c => ({
+            id: c.id,
+            name: c.name,
+            description: c.description,
+            price: Number(c.price),
+            imageUrl: c.image_url,
+            category: c.category_name
+          })));
+        }
+
+        if (categoriesRes.data && categoriesRes.data.length > 0) {
+          setCategories(categoriesRes.data.map(cat => cat.name));
+        }
+
+        if (couponsRes.data && couponsRes.data.length > 0) {
+          setCoupons(couponsRes.data.map(c => ({
+            code: c.code,
+            discountPercent: c.discount_percent
+          })));
+        }
+      } catch (error) {
+        console.error("Error fetching live data:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
 
   const addToCart = (cake: Cake) => {
     setCart(prev => {
@@ -105,16 +116,13 @@ const App: React.FC = () => {
       <Navbar onCartClick={() => setIsCartOpen(true)} cartCount={cart.reduce((a, b) => a + b.quantity, 0)} />
 
       <main className="flex-grow pt-20">
-        {/* Centered Hero Section with Dark Background Image Overlay */}
         <section className="relative w-full h-[90vh] min-h-[600px] flex items-center justify-center overflow-hidden">
-          {/* Hero Background Layer - Darkened with Black Overlay */}
           <div className="absolute inset-0 z-0 bg-midnight">
             <img 
               src="https://images.unsplash.com/photo-1535141192574-5d4897c12636?q=80&w=2587&auto=format&fit=crop" 
               className="w-full h-full object-cover opacity-50 scale-100" 
               alt="Artisanal Cakes Background"
             />
-            {/* Black gradient overlay for depth and visibility */}
             <div className="absolute inset-0 bg-gradient-to-t from-midnight via-transparent to-midnight/40"></div>
           </div>
 
@@ -128,7 +136,6 @@ const App: React.FC = () => {
                 Experience the luxury of handcrafted cakes that blend premium Ugandan ingredients with world-class baking techniques.
               </p>
               
-              {/* Buttons side by side */}
               <div className="flex flex-row justify-center items-center gap-4 md:gap-6">
                 <button 
                   onClick={scrollToCatalogue}
@@ -146,7 +153,6 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Scroll Down Arrow */}
           <button 
             onClick={scrollToCatalogue}
             className="absolute bottom-10 left-1/2 -translate-x-1/2 z-20 animate-bounce cursor-pointer opacity-70 hover:opacity-100 transition-opacity"
@@ -155,7 +161,6 @@ const App: React.FC = () => {
           </button>
         </section>
 
-        {/* Collection Section */}
         <section 
           id="catalogue" 
           ref={catalogueRef}
@@ -167,7 +172,6 @@ const App: React.FC = () => {
               <p className="text-slate-500">Each piece is baked fresh daily using the finest organic dairy and Belgian chocolates.</p>
             </div>
             
-            {/* Horizontal Scrollable Categories */}
             <div className="w-full md:w-auto overflow-hidden">
                 <div className="flex flex-nowrap gap-3 overflow-x-auto pb-4 no-scrollbar scroll-smooth">
                 {displayCategories.map(cat => (
@@ -187,16 +191,23 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-8 gap-y-12">
-            {filteredCakes.map((cake, idx) => (
-              <div key={cake.id} className="animate-fade-up" style={{ animationDelay: `${0.1 * idx}s` }}>
-                <CakeCard 
-                  cake={cake} 
-                  onAddToCart={addToCart} 
-                />
-              </div>
-            ))}
-          </div>
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center py-20">
+               <div className="w-12 h-12 border-4 border-rose-gold border-t-transparent rounded-full animate-spin mb-4"></div>
+               <p className="text-slate-400 font-serif italic">Setting the table...</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-8 gap-y-12">
+              {filteredCakes.map((cake, idx) => (
+                <div key={cake.id} className="animate-fade-up" style={{ animationDelay: `${0.1 * idx}s` }}>
+                  <CakeCard 
+                    cake={cake} 
+                    onAddToCart={addToCart} 
+                  />
+                </div>
+              ))}
+            </div>
+          )}
         </section>
       </main>
 
