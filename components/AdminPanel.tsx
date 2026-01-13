@@ -45,12 +45,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ cakes, setCakes, coupons, setCo
 
   const handleSaveCake = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!supabase) {
-      alert("Database not connected. Changes will only be temporary.");
-      return;
-    }
-
     setIsSaving(true);
+
     try {
       const cakeData = {
         name: formCake.name || 'Unnamed Cake',
@@ -83,9 +79,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ cakes, setCakes, coupons, setCo
       setFormCake({ category: categories[0] || 'Birthday' });
       setIsEditing(null);
       setActiveView(AdminView.CAKES);
-    } catch (err) {
-      console.error("Database Save Error:", err);
-      alert("Failed to save to database. Check your Supabase configuration.");
+      alert("Successfully saved to database!");
+    } catch (err: any) {
+      console.error("Supabase Save Error Details:", err);
+      alert(`Error saving cake: ${err.message || 'Unknown error'}. Did you run the SQL script in Supabase?`);
     } finally {
       setIsSaving(false);
     }
@@ -93,12 +90,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ cakes, setCakes, coupons, setCo
 
   const handleDeleteCake = async (id: string) => {
     if (window.confirm('Delete this cake permanently?')) {
-      if (supabase) {
-        const { error } = await supabase.from('cakes').delete().eq('id', id);
-        if (error) {
-            alert("Delete failed.");
-            return;
-        }
+      const { error } = await supabase.from('cakes').delete().eq('id', id);
+      if (error) {
+          alert(`Delete failed: ${error.message}`);
+          return;
       }
       setCakes(prev => prev.filter(c => c.id !== id));
     }
@@ -117,12 +112,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ cakes, setCakes, coupons, setCo
 
   const handleAddCategory = async () => {
     if (newCategory && !categories.includes(newCategory)) {
-      if (supabase) {
-        const { error } = await supabase.from('categories').insert([{ name: newCategory }]);
-        if (error) {
-            alert("Failed to add category to cloud.");
-            return;
-        }
+      const { error } = await supabase.from('categories').insert([{ name: newCategory }]);
+      if (error) {
+          alert(`Failed to add category: ${error.message}`);
+          return;
       }
       setCategories(prev => [...prev, newCategory]);
       setNewCategory('');
@@ -131,25 +124,23 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ cakes, setCakes, coupons, setCo
 
   const handleDeleteCategory = async (cat: string) => {
     if (window.confirm(`Delete category "${cat}"?`)) {
-      if (supabase) {
-        const { error } = await supabase.from('categories').delete().eq('name', cat);
-        if (error) {
-            alert("Delete failed. Check if cakes are linked to this category.");
-            return;
-        }
+      const { error } = await supabase.from('categories').delete().eq('name', cat);
+      if (error) {
+          alert(`Delete failed: ${error.message}. Note: You cannot delete a category that still has cakes assigned to it.`);
+          return;
       }
       setCategories(prev => prev.filter(c => c !== cat));
     }
   };
 
   const handleAddCoupon = async () => {
-      if(newCoupon.code && supabase) {
+      if(newCoupon.code) {
           const { error } = await supabase.from('coupons').insert([{ 
               code: newCoupon.code, 
               discount_percent: newCoupon.discountPercent 
           }]);
           if (error) {
-              alert("Coupon already exists or error occurred.");
+              alert(`Coupon error: ${error.message}`);
               return;
           }
           setCoupons(prev => [...prev, newCoupon]);
@@ -158,9 +149,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ cakes, setCakes, coupons, setCo
   };
 
   const handleDeleteCoupon = async (code: string) => {
-      if (supabase) {
-          await supabase.from('coupons').delete().eq('code', code);
-      }
+      await supabase.from('coupons').delete().eq('code', code);
       setCoupons(prev => prev.filter(c => c.code !== code));
   };
 
@@ -387,6 +376,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ cakes, setCakes, coupons, setCo
                                 </div>
                             </div>
                         ))}
+                        {cakes.length === 0 && (
+                            <p className="text-slate-400 italic font-serif">Your inventory is empty. Start by adding a new creation!</p>
+                        )}
                     </div>
                 </div>
             )}

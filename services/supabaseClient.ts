@@ -1,27 +1,11 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// Vercel and Vite handle process.env differently. This helper ensures we get the keys.
-const getEnv = (key: string) => {
-  if (typeof process !== 'undefined' && process.env && process.env[key]) {
-    return process.env[key];
-  }
-  // Cast import.meta to any to safely access Vite's env property without TypeScript errors
-  const meta = import.meta as any;
-  if (meta.env && meta.env[key]) {
-    return meta.env[key];
-  }
-  return '';
-};
+const URL = 'https://yhbqjgrqbzmcmxrpnqfy.supabase.co';
+const KEY = 'sb_publishable_H6RXBzi-CGdyIrsgWvhhSA_nIVYemf3';
 
-const supabaseUrl = getEnv('SUPABASE_URL');
-const supabaseAnonKey = getEnv('SUPABASE_ANON_KEY');
+// Export a reliable client instance. 
+// Note: createClient never returns null; it returns a client object even with invalid keys.
+export const supabase = createClient(URL, KEY);
 
-// Only initialize if credentials exist
-export const supabase = (supabaseUrl && supabaseAnonKey) 
-  ? createClient(supabaseUrl, supabaseAnonKey) 
-  : null;
-
-if (!supabase) {
-  console.error("Supabase configuration missing! Please add SUPABASE_URL and SUPABASE_ANON_KEY to your Environment Variables.");
-}
+console.log("Farah Cakes: Supabase client initialized for", URL);
