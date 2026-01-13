@@ -79,24 +79,47 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ cakes, setCakes, coupons, setCo
       setFormCake({ category: categories[0] || 'Birthday' });
       setIsEditing(null);
       setActiveView(AdminView.CAKES);
-      alert("Successfully saved to database!");
     } catch (err: any) {
-      console.error("Supabase Save Error Details:", err);
-      alert(`Error saving cake: ${err.message || 'Unknown error'}. Did you run the SQL script in Supabase?`);
+      console.error("Supabase Save Error:", err);
+      alert(`Error saving: ${err.message || 'Unknown error'}`);
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleDeleteCake = async (id: string) => {
-    if (window.confirm('Delete this cake permanently?')) {
-      const { error } = await supabase.from('cakes').delete().eq('id', id);
-      if (error) {
-          alert(`Delete failed: ${error.message}`);
+    if (!window.confirm('Delete this cake permanently?')) return;
+
+    // Smart Delete: Demo IDs (like '1', '2') aren't UUIDs and will crash Supabase queries.
+    // UUIDs are 36 characters long.
+    const isRealDbItem = id.length > 10; 
+
+    if (isRealDbItem) {
+      try {
+        const { error, status } = await supabase
+          .from('cakes')
+          .delete()
+          .eq('id', id);
+
+        if (error) {
+          console.error("Delete Error details:", error);
+          alert(`Database error: ${error.message}`);
           return;
+        }
+        
+        // If status is 204 or 200, it succeeded
+        console.log(`Successfully deleted cake ${id} from database.`);
+      } catch (err: any) {
+        console.error("Critical delete error:", err);
+        alert("A network error occurred while trying to delete.");
+        return;
       }
-      setCakes(prev => prev.filter(c => c.id !== id));
+    } else {
+      console.log("Removing demo/local item from view.");
     }
+
+    // Always update local state to reflect the change in UI
+    setCakes(prev => prev.filter(c => c.id !== id));
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
