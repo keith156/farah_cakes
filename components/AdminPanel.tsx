@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Cake, Coupon, AdminView } from '../types';
 import { supabase } from '../services/supabaseClient';
+import { generateDescription } from '../services/geminiService';
 
 interface AdminPanelProps {
   cakes: Cake[];
@@ -19,13 +20,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ cakes, setCakes, coupons, setCo
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   
-  const [activeView, setActiveView] = useState<AdminView>(AdminView.DASHBOARD);
+  const [activeView, setActiveView] = useState<AdminView>(AdminView.CAKES);
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [formCake, setFormCake] = useState<Partial<Cake>>({ category: categories[0] || 'Birthday' });
   
   const [newCoupon, setNewCoupon] = useState({ code: '', discountPercent: 10 });
   const [newCategory, setNewCategory] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isGeneratingAi, setIsGeneratingAi] = useState(false);
 
   useEffect(() => {
     if (!formCake.category && categories.length > 0) {
@@ -89,48 +91,21 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ cakes, setCakes, coupons, setCo
 
   const handleDeleteCake = async (id: string) => {
     if (!window.confirm('Delete this cake permanently?')) return;
-
-    // Smart Delete: Demo IDs (like '1', '2') aren't UUIDs and will crash Supabase queries.
-    // UUIDs are 36 characters long.
     const isRealDbItem = id.length > 10; 
 
     if (isRealDbItem) {
       try {
-        const { error, status } = await supabase
-          .from('cakes')
-          .delete()
-          .eq('id', id);
-
+        const { error } = await supabase.from('cakes').delete().eq('id', id);
         if (error) {
-          console.error("Delete Error details:", error);
           alert(`Database error: ${error.message}`);
           return;
         }
-        
-        // If status is 204 or 200, it succeeded
-        console.log(`Successfully deleted cake ${id} from database.`);
       } catch (err: any) {
-        console.error("Critical delete error:", err);
-        alert("A network error occurred while trying to delete.");
+        alert("A network error occurred.");
         return;
       }
-    } else {
-      console.log("Removing demo/local item from view.");
     }
-
-    // Always update local state to reflect the change in UI
     setCakes(prev => prev.filter(c => c.id !== id));
-  };
-
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormCake(prev => ({ ...prev, imageUrl: reader.result as string }));
-      };
-      reader.readAsDataURL(file);
-    }
   };
 
   const handleAddCategory = async () => {
@@ -146,69 +121,76 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ cakes, setCakes, coupons, setCo
   };
 
   const handleDeleteCategory = async (cat: string) => {
-    if (window.confirm(`Delete category "${cat}"?`)) {
-      const { error } = await supabase.from('categories').delete().eq('name', cat);
-      if (error) {
-          alert(`Delete failed: ${error.message}. Note: You cannot delete a category that still has cakes assigned to it.`);
+    const { error } = await supabase.from('categories').delete().eq('name', cat);
+    if (error) {
+        alert(`Delete failed: ${error.message}.`);
+        return;
+    }
+    setCategories(prev => prev.filter(c => c !== cat));
+  };
+
+  // Fix: Implemented handleAddCoupon to persist coupons and update local state
+  const handleAddCoupon = async () => {
+    if (newCoupon.code && newCoupon.discountPercent > 0) {
+      try {
+        const { error } = await supabase.from('coupons').insert([{ 
+          code: newCoupon.code.toUpperCase(), 
+          discount_percent: newCoupon.discountPercent 
+        }]);
+        if (error) {
+          alert(`Failed to add coupon: ${error.message}`);
           return;
+        }
+        setCoupons(prev => [...prev, { ...newCoupon, code: newCoupon.code.toUpperCase() }]);
+        setNewCoupon({ code: '', discountPercent: 10 });
+      } catch (err: any) {
+        alert("A network error occurred while adding coupon.");
       }
-      setCategories(prev => prev.filter(c => c !== cat));
     }
   };
 
-  const handleAddCoupon = async () => {
-      if(newCoupon.code) {
-          const { error } = await supabase.from('coupons').insert([{ 
-              code: newCoupon.code, 
-              discount_percent: newCoupon.discountPercent 
-          }]);
-          if (error) {
-              alert(`Coupon error: ${error.message}`);
-              return;
-          }
-          setCoupons(prev => [...prev, newCoupon]);
-          setNewCoupon({code: '', discountPercent: 10});
+  // Fix: Implemented handleDeleteCoupon to remove coupons from database and local state
+  const handleDeleteCoupon = async (code: string) => {
+    if (!window.confirm(`Are you sure you want to delete the coupon "${code}"?`)) return;
+    try {
+      const { error } = await supabase.from('coupons').delete().eq('code', code);
+      if (error) {
+        alert(`Failed to delete coupon: ${error.message}`);
+        return;
       }
+      setCoupons(prev => prev.filter(c => c.code !== code));
+    } catch (err: any) {
+      alert("A network error occurred while deleting coupon.");
+    }
   };
 
-  const handleDeleteCoupon = async (code: string) => {
-      await supabase.from('coupons').delete().eq('code', code);
-      setCoupons(prev => prev.filter(c => c.code !== code));
+  const handleAiDescription = async () => {
+    if (!formCake.name) {
+      alert("Please enter a cake name first.");
+      return;
+    }
+    setIsGeneratingAi(true);
+    try {
+      const desc = await generateDescription(formCake.name, formCake.category || categories[0] || 'Birthday');
+      setFormCake(prev => ({ ...prev, description: desc }));
+    } catch (err) {
+      console.error("AI Gen error:", err);
+    } finally {
+      setIsGeneratingAi(false);
+    }
   };
 
   if (!isAuthenticated) {
     return (
       <div className="fixed inset-0 z-[100] bg-midnight flex items-center justify-center p-4">
-        <div className="bg-white p-10 rounded-[2.5rem] w-full max-w-md shadow-2xl relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-full h-2 bg-rose-gold"></div>
-          <div className="text-center mb-10">
-            <h2 className="text-4xl font-serif text-midnight mb-2">Staff Gateway</h2>
-            <p className="text-slate-400 text-sm">Welcome back to the bakery dashboard.</p>
-          </div>
-          <form onSubmit={handleLogin} className="space-y-5">
-            <div>
-              <input 
-                type="text" 
-                value={username}
-                onChange={e => setUsername(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl outline-none focus:ring-2 focus:ring-rose-gold/20 transition" 
-                placeholder="Username"
-              />
-            </div>
-            <div>
-              <input 
-                type="password" 
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-100 p-4 rounded-2xl outline-none focus:ring-2 focus:ring-rose-gold/20 transition" 
-                placeholder="Password"
-              />
-            </div>
-            {loginError && <p className="text-red-500 text-xs text-center font-bold uppercase tracking-widest">{loginError}</p>}
-            <button className="w-full bg-midnight text-white p-5 rounded-2xl font-bold uppercase tracking-widest text-sm hover:bg-slate-800 transition shadow-xl shadow-midnight/10">
-              Access Dashboard
-            </button>
-            <button type="button" onClick={onClose} className="w-full text-slate-400 text-xs font-bold uppercase tracking-[0.2em] pt-4">Return to Store</button>
+        <div className="bg-white p-10 rounded-[2.5rem] w-full max-w-md shadow-2xl relative overflow-hidden text-center">
+          <h2 className="text-4xl font-serif text-midnight mb-8">Admin Access</h2>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <input type="text" value={username} onChange={e => setUsername(e.target.value)} className="w-full bg-slate-50 p-4 rounded-xl border border-slate-100 outline-none" placeholder="Username" />
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-slate-50 p-4 rounded-xl border border-slate-100 outline-none" placeholder="Password" />
+            {loginError && <p className="text-red-500 text-xs">{loginError}</p>}
+            <button className="w-full bg-midnight text-white p-4 rounded-xl font-bold uppercase tracking-widest text-xs">Enter Dashboard</button>
+            <button type="button" onClick={onClose} className="text-slate-400 text-xs uppercase tracking-widest mt-4">Close</button>
           </form>
         </div>
       </div>
@@ -216,287 +198,210 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ cakes, setCakes, coupons, setCo
   }
 
   return (
-    <div className="fixed inset-0 z-[100] bg-[#F8F9FA] flex flex-col md:flex-row">
-      <aside className="w-full md:w-64 bg-midnight text-white flex flex-col p-8 shrink-0">
-        <div className="flex items-center gap-4 mb-12">
-            <div className="w-10 h-10 bg-rose-gold rounded-xl flex items-center justify-center">
+    <div className="fixed inset-0 z-[100] bg-[#F9FAFB] flex overflow-hidden">
+      {/* Sidebar - Retained for Navigation */}
+      <aside className="w-20 md:w-64 bg-white border-r border-slate-100 flex flex-col p-6 shrink-0 transition-all">
+        <div className="flex items-center gap-3 mb-10 overflow-hidden">
+            <div className="w-10 h-10 bg-midnight rounded-xl flex items-center justify-center text-white shrink-0">
               <span className="font-serif font-bold italic">F</span>
             </div>
-            <h2 className="text-xl font-serif tracking-tight">Admin</h2>
+            <h2 className="text-xl font-serif hidden md:block">Store Manager</h2>
         </div>
-        
         <nav className="flex flex-col gap-2">
             {[
-                { id: AdminView.DASHBOARD, label: 'Add Cake', icon: 'fa-plus' },
-                { id: AdminView.CAKES, label: 'Inventory', icon: 'fa-boxes' },
-                { id: AdminView.CATEGORIES, label: 'Categories', icon: 'fa-tags' },
+                { id: AdminView.CAKES, label: 'Inventory', icon: 'fa-box' },
                 { id: AdminView.COUPONS, label: 'Coupons', icon: 'fa-ticket' }
             ].map(item => (
                 <button 
                     key={item.id}
-                    onClick={() => { setActiveView(item.id as AdminView); setIsEditing(null); }}
-                    className={`flex items-center gap-4 px-6 py-4 rounded-2xl text-sm font-bold uppercase tracking-widest transition ${
-                        activeView === item.id ? 'bg-rose-gold text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-white/5'
+                    onClick={() => setActiveView(item.id as AdminView)}
+                    className={`flex items-center gap-4 px-4 py-3 rounded-xl text-xs font-bold uppercase tracking-widest transition ${
+                        activeView === item.id ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-50'
                     }`}
                 >
-                    <i className={`fa-solid ${item.icon}`}></i>
-                    {item.label}
+                    <i className={`fa-solid ${item.icon} w-5`}></i>
+                    <span className="hidden md:block">{item.label}</span>
                 </button>
             ))}
         </nav>
-        
-        <button onClick={onClose} className="mt-auto flex items-center gap-4 px-6 py-4 text-slate-500 hover:text-white transition text-xs font-bold uppercase tracking-widest">
-            <i className="fa-solid fa-arrow-left-long"></i>
-            Storefront
+        <button onClick={onClose} className="mt-auto flex items-center gap-4 px-4 py-3 text-slate-400 hover:text-midnight transition text-xs font-bold uppercase tracking-widest">
+            <i className="fa-solid fa-arrow-left"></i>
+            <span className="hidden md:block">Exit</span>
         </button>
       </aside>
 
-      <main className="flex-grow overflow-y-auto p-6 md:p-12">
-        <div className="max-w-5xl mx-auto">
-            {activeView === AdminView.DASHBOARD && (
-                <div className="animate-fade-up">
-                    <h3 className="text-4xl font-serif text-midnight mb-8">{isEditing ? 'Edit Masterpiece' : 'Add New Creation'}</h3>
-                    <div className="bg-white rounded-[2.5rem] p-10 shadow-xl shadow-black/5">
-                        <form onSubmit={handleSaveCake} className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-                            <div className="space-y-8 flex flex-col">
-                                <div>
-                                    <label className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Masterpiece Visual</label>
-                                    <div className="aspect-square bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] overflow-hidden flex items-center justify-center relative group">
-                                        {formCake.imageUrl ? (
-                                            <>
-                                                <img src={formCake.imageUrl} className="w-full h-full object-cover" alt="Preview" />
-                                                <div className="absolute inset-0 bg-midnight/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                                    <span className="bg-white text-midnight px-6 py-2 rounded-full text-xs font-bold uppercase tracking-widest cursor-pointer">Change Image</span>
-                                                </div>
-                                            </>
-                                        ) : (
-                                            <div className="text-center p-8">
-                                                <i className="fa-solid fa-image text-4xl text-slate-200 mb-4"></i>
-                                                <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">Upload Portrait Photo</p>
-                                            </div>
-                                        )}
-                                        <input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={handleImageUpload} />
-                                    </div>
-                                </div>
-                                
-                                <button 
-                                    disabled={isSaving}
-                                    className="hidden lg:block w-full bg-midnight text-white py-5 rounded-2xl font-bold uppercase tracking-widest text-sm hover:bg-slate-800 transition shadow-xl mt-auto disabled:opacity-50"
-                                >
-                                    {isSaving ? 'Syncing...' : (isEditing ? 'Save Changes' : 'Launch Listing')}
-                                </button>
-                                {isEditing && (
-                                    <button 
-                                        type="button" 
-                                        onClick={() => { setIsEditing(null); setFormCake({ category: categories[0] || 'Birthday' }); }}
-                                        className="hidden lg:block text-slate-400 text-xs font-bold uppercase tracking-widest mt-4"
-                                    >
-                                        Discard Changes
-                                    </button>
-                                )}
-                            </div>
-
-                            <div className="space-y-6">
-                                <div>
-                                    <label className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Cake Name</label>
-                                    <input 
-                                        type="text" 
-                                        required
-                                        value={formCake.name || ''}
-                                        onChange={e => setFormCake(prev => ({ ...prev, name: e.target.value }))}
-                                        className="w-full bg-slate-50 border-none p-4 rounded-2xl outline-none focus:ring-2 focus:ring-rose-gold/20" 
-                                        placeholder="e.g. Belgian Truffle Noir"
-                                    />
-                                </div>
-                                <div className="grid grid-cols-2 gap-6">
-                                    <div>
-                                        <label className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Price (UGX)</label>
-                                        <input 
-                                            type="number" 
-                                            required
-                                            value={formCake.price || ''}
-                                            onChange={e => setFormCake(prev => ({ ...prev, price: Number(e.target.value) }))}
-                                            className="w-full bg-slate-50 border-none p-4 rounded-2xl outline-none focus:ring-2 focus:ring-rose-gold/20" 
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Category</label>
-                                        <select 
-                                            value={formCake.category || categories[0] || 'Birthday'}
-                                            onChange={e => setFormCake(prev => ({ ...prev, category: e.target.value }))}
-                                            className="w-full bg-slate-50 border-none p-4 rounded-2xl outline-none focus:ring-2 focus:ring-rose-gold/20 appearance-none"
-                                        >
-                                            {categories.map(cat => (
-                                              <option key={cat} value={cat}>{cat}</option>
-                                            ))}
-                                            {categories.length === 0 && <option>General</option>}
-                                        </select>
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Description</label>
-                                    <textarea 
-                                        required
-                                        value={formCake.description || ''}
-                                        onChange={e => setFormCake(prev => ({ ...prev, description: e.target.value }))}
-                                        className="w-full bg-slate-50 border-none p-4 rounded-2xl outline-none focus:ring-2 focus:ring-rose-gold/20 h-40 resize-none"
-                                        placeholder="Describe the layers of flavor..."
-                                    />
-                                </div>
-                                
-                                <button 
-                                    disabled={isSaving}
-                                    className="lg:hidden w-full bg-midnight text-white py-5 rounded-2xl font-bold uppercase tracking-widest text-sm hover:bg-slate-800 transition shadow-xl disabled:opacity-50"
-                                >
-                                    {isSaving ? 'Syncing...' : (isEditing ? 'Save Changes' : 'Launch Listing')}
-                                </button>
-                                {isEditing && (
-                                    <button 
-                                        type="button" 
-                                        onClick={() => { setIsEditing(null); setFormCake({ category: categories[0] || 'Birthday' }); }}
-                                        className="lg:hidden text-slate-400 text-xs font-bold uppercase tracking-widest mt-4"
-                                    >
-                                        Discard Changes
-                                    </button>
-                                )}
-                            </div>
-                        </form>
+      <main className="flex-grow overflow-y-auto p-4 md:p-12">
+        <div className="max-w-4xl mx-auto">
+          {activeView === AdminView.CAKES && (
+            <div className="animate-fade-up">
+              {/* Categories Section from Image */}
+              <div className="mb-12">
+                <h3 className="text-xl font-bold text-slate-800 mb-6">Store Categories</h3>
+                <div className="flex flex-wrap gap-3 items-center">
+                  {categories.map((cat, i) => (
+                    <div key={i} className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-full shadow-sm">
+                      <span className="text-sm font-semibold text-slate-700">{cat}</span>
+                      <button onClick={() => handleDeleteCategory(cat)} className="text-slate-300 hover:text-red-400 transition">
+                        <i className="fa-solid fa-times text-xs"></i>
+                      </button>
                     </div>
+                  ))}
+                  <div className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-full shadow-sm group focus-within:ring-2 focus-within:ring-orange-200 transition">
+                    <input 
+                      type="text" 
+                      placeholder="New category..." 
+                      className="bg-transparent text-sm outline-none w-32 placeholder:text-slate-300"
+                      value={newCategory}
+                      onChange={e => setNewCategory(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleAddCategory()}
+                    />
+                    <button onClick={handleAddCategory} className="text-emerald-400 hover:text-emerald-600">
+                      <i className="fa-solid fa-plus text-sm"></i>
+                    </button>
+                  </div>
                 </div>
-            )}
+              </div>
 
-            {activeView === AdminView.CAKES && (
-                <div className="animate-fade-up">
-                    <h3 className="text-4xl font-serif text-midnight mb-8">Bakery Inventory</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {cakes.map(cake => (
-                            <div key={cake.id} className="bg-white p-6 rounded-3xl shadow-sm border border-white hover:border-slate-100 transition flex gap-6 items-center">
-                                <img src={cake.imageUrl} className="w-24 h-24 object-cover rounded-2xl flex-shrink-0 shadow-inner" alt="" />
-                                <div className="flex-grow">
-                                    <div className="flex justify-between items-start">
-                                      <h4 className="font-serif text-xl text-midnight mb-1">{cake.name}</h4>
-                                      <span className="text-[9px] uppercase font-bold tracking-widest bg-slate-50 text-slate-400 px-2 py-1 rounded-full">{cake.category}</span>
-                                    </div>
-                                    <p className="text-slate-400 text-sm font-medium mb-4">{new Intl.NumberFormat('en-UG', { style: 'currency', currency: 'UGX' }).format(cake.price)}</p>
-                                    <div className="flex gap-4">
-                                        <button 
-                                            onClick={() => { 
-                                                setIsEditing(cake.id); 
-                                                setFormCake(cake);
-                                                setActiveView(AdminView.DASHBOARD);
-                                            }}
-                                            className="text-rose-gold text-[10px] font-bold uppercase tracking-widest hover:text-midnight transition"
-                                        >
-                                            Edit
-                                        </button>
-                                        <button 
-                                            onClick={() => handleDeleteCake(cake.id)}
-                                            className="text-red-400 text-[10px] font-bold uppercase tracking-widest hover:text-red-600 transition"
-                                        >
-                                            Delete
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                        {cakes.length === 0 && (
-                            <p className="text-slate-400 italic font-serif">Your inventory is empty. Start by adding a new creation!</p>
+              {/* Product Inventory Section from Image */}
+              <div className="text-center mb-10">
+                <h3 className="text-3xl font-bold text-slate-800 mb-2">Product Inventory</h3>
+                <p className="text-slate-400 text-sm mb-8">Update products, prices, and stock levels.</p>
+                <button 
+                  onClick={() => { setActiveView(AdminView.DASHBOARD); setIsEditing(null); setFormCake({ category: categories[0] }); }}
+                  className="bg-[#FFB84C] hover:bg-[#ffa929] text-midnight px-12 py-4 rounded-full font-bold uppercase tracking-widest text-sm shadow-xl shadow-orange-200 flex items-center gap-3 mx-auto transition-transform active:scale-95"
+                >
+                  <i className="fa-solid fa-plus"></i>
+                  Create Product
+                </button>
+              </div>
+
+              {/* Inventory List from Image */}
+              <div className="space-y-4">
+                {cakes.map(cake => (
+                  <div key={cake.id} className="bg-white p-4 rounded-[1.5rem] shadow-sm border border-slate-50 flex items-center gap-6 group hover:shadow-md transition-shadow">
+                    <img src={cake.imageUrl} className="w-16 h-16 rounded-xl object-cover shrink-0" alt="" />
+                    <div className="flex-grow">
+                      <h4 className="font-bold text-slate-800 text-lg leading-tight truncate max-w-[200px]">{cake.name}</h4>
+                      <p className="text-emerald-500 font-bold text-xs uppercase tracking-wider">
+                        UGX {cake.price.toLocaleString()} • {cake.category}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-6 shrink-0">
+                      {/* Toggle Switch */}
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" defaultChecked className="sr-only peer" />
+                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                      </label>
+                      {/* Action Buttons */}
+                      <div className="flex gap-2">
+                        <button 
+                           onClick={() => { setIsEditing(cake.id); setFormCake(cake); setActiveView(AdminView.DASHBOARD); }}
+                           className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-50 text-slate-400 hover:text-midnight transition border border-transparent hover:border-slate-200"
+                        >
+                          <i className="fa-solid fa-pen-to-square"></i>
+                        </button>
+                        <button 
+                           onClick={() => handleDeleteCake(cake.id)}
+                           className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-50 text-slate-400 hover:text-red-500 transition border border-transparent hover:border-red-100"
+                        >
+                          <i className="fa-solid fa-trash"></i>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeView === AdminView.DASHBOARD && (
+            <div className="animate-fade-up">
+              <div className="flex items-center justify-between mb-8">
+                <button onClick={() => setActiveView(AdminView.CAKES)} className="text-slate-400 hover:text-midnight font-bold uppercase tracking-widest text-xs flex items-center gap-2">
+                  <i className="fa-solid fa-arrow-left"></i> Back to Inventory
+                </button>
+                <h3 className="text-2xl font-bold text-slate-800">{isEditing ? 'Edit Product' : 'New Product'}</h3>
+              </div>
+              <div className="bg-white p-10 rounded-[2.5rem] shadow-xl shadow-black/5">
+                <form onSubmit={handleSaveCake} className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                  <div className="space-y-6">
+                    <div>
+                      <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Product Image</label>
+                      <div className="aspect-square bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] overflow-hidden flex items-center justify-center relative group">
+                        {formCake.imageUrl ? (
+                          <img src={formCake.imageUrl} className="w-full h-full object-cover" />
+                        ) : (
+                          <i className="fa-solid fa-camera text-4xl text-slate-200"></i>
                         )}
+                        <input 
+                          type="file" 
+                          accept="image/*" 
+                          className="absolute inset-0 opacity-0 cursor-pointer" 
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onloadend = () => setFormCake(prev => ({ ...prev, imageUrl: reader.result as string }));
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                        />
+                      </div>
                     </div>
-                </div>
-            )}
+                  </div>
+                  <div className="space-y-4">
+                    <input type="text" placeholder="Product Name" className="w-full p-4 bg-slate-50 border-none rounded-2xl outline-none" value={formCake.name || ''} onChange={e => setFormCake(prev => ({ ...prev, name: e.target.value }))} required />
+                    <input type="number" placeholder="Price (UGX)" className="w-full p-4 bg-slate-50 border-none rounded-2xl outline-none" value={formCake.price || ''} onChange={e => setFormCake(prev => ({ ...prev, price: Number(e.target.value) }))} required />
+                    <select className="w-full p-4 bg-slate-50 border-none rounded-2xl outline-none" value={formCake.category} onChange={e => setFormCake(prev => ({ ...prev, category: e.target.value }))}>
+                      {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                    </select>
+                    <div className="relative">
+                      <textarea placeholder="Product Description" className="w-full p-4 bg-slate-50 border-none rounded-2xl outline-none h-32 resize-none" value={formCake.description || ''} onChange={e => setFormCake(prev => ({ ...prev, description: e.target.value }))} required />
+                      <button 
+                        type="button" 
+                        onClick={handleAiDescription}
+                        disabled={isGeneratingAi}
+                        className="absolute bottom-4 right-4 text-rose-gold hover:text-rose-gold-dark text-[10px] font-bold uppercase tracking-widest flex items-center gap-1 bg-white/80 backdrop-blur px-2 py-1 rounded-lg"
+                      >
+                        {isGeneratingAi ? <i className="fa-solid fa-spinner animate-spin"></i> : <i className="fa-solid fa-wand-magic-sparkles"></i>}
+                        AI Gen
+                      </button>
+                    </div>
+                    <button disabled={isSaving} className="w-full bg-[#FFB84C] text-midnight py-4 rounded-xl font-bold uppercase tracking-widest text-xs shadow-lg disabled:opacity-50 transition-all hover:bg-[#ffa929]">
+                      {isSaving ? 'Saving...' : 'Confirm Details'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
 
-            {activeView === AdminView.CATEGORIES && (
-                <div className="animate-fade-up">
-                    <h3 className="text-4xl font-serif text-midnight mb-8">Categories</h3>
-                    <div className="bg-white p-10 rounded-[2.5rem] shadow-xl shadow-black/5 mb-12">
-                        <div className="flex gap-4 items-end">
-                            <div className="flex-grow">
-                                <label className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-3">New Category Name</label>
-                                <input 
-                                    type="text" 
-                                    value={newCategory}
-                                    onChange={e => setNewCategory(e.target.value)}
-                                    placeholder="e.g. Pastries"
-                                    className="w-full bg-slate-50 border-none p-4 rounded-2xl outline-none focus:ring-2 focus:ring-rose-gold/20 font-bold"
-                                />
-                            </div>
-                            <button 
-                                onClick={handleAddCategory}
-                                className="bg-midnight text-white py-4 px-8 rounded-2xl font-bold uppercase tracking-widest text-xs h-[56px] hover:bg-slate-800 transition"
-                            >
-                                Add Category
-                            </button>
-                        </div>
+          {activeView === AdminView.COUPONS && (
+            <div className="animate-fade-up">
+              <h3 className="text-3xl font-bold text-slate-800 mb-8">Promotion Engine</h3>
+              {/* Simplified Coupon Management */}
+              <div className="bg-white p-8 rounded-[2rem] border border-slate-100 mb-8">
+                 <div className="flex flex-col md:flex-row gap-4">
+                    <input type="text" placeholder="CODE" className="flex-grow p-4 bg-slate-50 rounded-xl outline-none font-bold uppercase" value={newCoupon.code} onChange={e => setNewCoupon(prev => ({ ...prev, code: e.target.value.toUpperCase() }))} />
+                    <input type="number" placeholder="%" className="w-24 p-4 bg-slate-50 rounded-xl outline-none font-bold" value={newCoupon.discountPercent} onChange={e => setNewCoupon(prev => ({ ...prev, discountPercent: Number(e.target.value) }))} />
+                    <button onClick={handleAddCoupon} className="bg-midnight text-white px-8 py-4 rounded-xl font-bold uppercase tracking-widest text-xs">Add</button>
+                 </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {coupons.map((c, i) => (
+                  <div key={i} className="bg-white p-6 rounded-2xl border border-slate-50 flex items-center justify-between">
+                    <div>
+                      <p className="font-bold text-midnight">{c.code}</p>
+                      <p className="text-xs text-slate-400 uppercase font-bold">{c.discountPercent}% Discount</p>
                     </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {categories.map((cat, i) => (
-                            <div key={i} className="bg-white p-6 rounded-3xl border border-white shadow-sm flex items-center justify-between group">
-                                <p className="text-midnight font-bold tracking-widest uppercase text-sm">{cat}</p>
-                                <button 
-                                    onClick={() => handleDeleteCategory(cat)}
-                                    className="w-10 h-10 bg-slate-50 rounded-full flex items-center justify-center text-red-300 hover:text-red-500 hover:bg-red-50 transition"
-                                >
-                                    <i className="fa-solid fa-trash-can text-sm"></i>
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
-
-            {activeView === AdminView.COUPONS && (
-                <div className="animate-fade-up">
-                    <h3 className="text-4xl font-serif text-midnight mb-8">Promotion Engine</h3>
-                    <div className="bg-white p-10 rounded-[2.5rem] shadow-xl shadow-black/5 mb-12">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
-                            <div>
-                                <label className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-3">Coupon Code</label>
-                                <input 
-                                    type="text" 
-                                    value={newCoupon.code}
-                                    onChange={e => setNewCoupon(prev => ({ ...prev, code: e.target.value.toUpperCase() }))}
-                                    placeholder="e.g. SUMMER25"
-                                    className="w-full bg-slate-50 border-none p-4 rounded-2xl outline-none focus:ring-2 focus:ring-rose-gold/20 uppercase tracking-widest font-bold"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold uppercase tracking-widest text-slate-400 mb-3">Discount (%)</label>
-                                <input 
-                                    type="number" 
-                                    value={newCoupon.discountPercent}
-                                    onChange={e => setNewCoupon(prev => ({ ...prev, discountPercent: Number(e.target.value) }))}
-                                    className="w-full bg-slate-50 border-none p-4 rounded-2xl outline-none focus:ring-2 focus:ring-rose-gold/20 font-bold"
-                                />
-                            </div>
-                            <button 
-                                onClick={handleAddCoupon}
-                                className="bg-midnight text-white py-4 rounded-2xl font-bold uppercase tracking-widest text-xs h-[56px] hover:bg-slate-800 transition"
-                            >
-                                Generate Coupon
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {coupons.map((c, i) => (
-                            <div key={i} className="bg-white p-8 rounded-3xl border border-white shadow-sm flex items-center justify-between">
-                                <div>
-                                    <p className="text-rose-gold font-bold tracking-[0.2em] uppercase text-sm mb-1">{c.code}</p>
-                                    <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">{c.discountPercent}% OFF</p>
-                                </div>
-                                <button 
-                                    onClick={() => handleDeleteCoupon(c.code)}
-                                    className="w-10 h-10 bg-slate-50 rounded-full flex items-center justify-center text-red-300 hover:text-red-500 hover:bg-red-50 transition"
-                                >
-                                    <i className="fa-solid fa-trash-can text-sm"></i>
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
+                    <button onClick={() => handleDeleteCoupon(c.code)} className="text-red-300 hover:text-red-500">
+                      <i className="fa-solid fa-trash"></i>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </main>
     </div>
