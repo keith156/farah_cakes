@@ -21,16 +21,14 @@ const App: React.FC = () => {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string>('All');
+  const [searchQuery, setSearchQuery] = useState('');
 
-  // Fetch data from Supabase on mount
   useEffect(() => {
     const fetchData = async () => {
       if (!supabase) {
-        console.warn("Supabase not configured. Using default sample data.");
         setIsLoading(false);
         return;
       }
-
       try {
         const [cakesRes, categoriesRes, couponsRes] = await Promise.all([
           supabase.from('cakes').select('*').order('created_at', { ascending: false }),
@@ -65,7 +63,6 @@ const App: React.FC = () => {
         setIsLoading(false);
       }
     };
-
     fetchData();
   }, []);
 
@@ -79,7 +76,7 @@ const App: React.FC = () => {
       }
       return [...prev, { ...cake, quantity: 1 }];
     });
-    setIsCartOpen(true);
+    // Removed setIsCartOpen(true) to avoid confusing users with immediate sidebar popups
   };
 
   const removeFromCart = (id: string) => {
@@ -96,120 +93,120 @@ const App: React.FC = () => {
     }));
   };
 
-  const handleSpecialRequest = () => {
-    const message = encodeURIComponent("Hello Farah Cakes! I'd like to inquire about a special custom cake request.");
-    window.open(`https://wa.me/${WHATSAPP_NUMBER.replace('+', '')}?text=${message}`, '_blank');
-  };
-
-  const scrollToCatalogue = (e: React.MouseEvent) => {
-    e.preventDefault();
-    catalogueRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
   const displayCategories = ['All', ...categories];
-  const filteredCakes = activeCategory === 'All' 
-    ? cakes 
-    : cakes.filter(c => c.category === activeCategory);
+  
+  const filteredCakes = cakes.filter(cake => {
+    const matchesCategory = activeCategory === 'All' || cake.category === activeCategory;
+    const matchesSearch = cake.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          cake.category.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesCategory && matchesSearch;
+  });
+
+  const cartTotal = cart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+  const cartCount = cart.reduce((a, b) => a + b.quantity, 0);
 
   return (
-    <div className="min-h-screen flex flex-col selection:bg-rose-gold/20">
-      <Navbar onCartClick={() => setIsCartOpen(true)} cartCount={cart.reduce((a, b) => a + b.quantity, 0)} />
+    <div className="min-h-screen flex flex-col">
+      <Navbar onCartClick={() => setIsCartOpen(true)} cartCount={cartCount} />
 
-      <main className="flex-grow pt-20">
-        <section className="relative w-full h-[90vh] min-h-[600px] flex items-center justify-center overflow-hidden">
-          <div className="absolute inset-0 z-0 bg-midnight">
-            <img 
-              src="https://images.unsplash.com/photo-1535141192574-5d4897c12636?q=80&w=2587&auto=format&fit=crop" 
-              className="w-full h-full object-cover opacity-50 scale-100" 
-              alt="Artisanal Cakes Background"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-midnight via-transparent to-midnight/40"></div>
-          </div>
-
-          <div className="max-w-4xl mx-auto px-6 text-center relative z-10">
-            <div className="animate-fade-up">
-              <span className="text-rose-gold font-bold tracking-[0.4em] uppercase text-xs mb-6 block drop-shadow-lg">Handcrafted Excellence Est. 2020</span>
-              <h1 className="text-6xl md:text-8xl lg:text-9xl font-serif leading-[1.05] mb-8 text-white drop-shadow-2xl">
-                Artistry in <br/><span className="italic text-rose-gold">Every Bite</span>
-              </h1>
-              <p className="text-xl text-slate-200 mb-12 max-w-2xl mx-auto leading-relaxed drop-shadow-lg">
-                Experience the luxury of handcrafted cakes that blend premium Ugandan ingredients with world-class baking techniques.
-              </p>
-              
-              <div className="flex flex-row justify-center items-center gap-4 md:gap-6">
-                <button 
-                  onClick={scrollToCatalogue}
-                  className="bg-rose-gold hover:bg-rose-gold-dark text-white px-8 md:px-12 py-4 md:py-5 rounded-full font-bold uppercase tracking-widest text-[10px] md:text-xs transition duration-300 shadow-2xl shrink-0"
-                >
-                  View Collection
-                </button>
-                <button 
-                  onClick={handleSpecialRequest}
-                  className="border-2 border-white/30 text-white hover:bg-white hover:text-midnight px-8 md:px-12 py-4 md:py-5 rounded-full font-bold uppercase tracking-widest text-[10px] md:text-xs transition duration-300 bg-white/10 backdrop-blur-md shrink-0"
-                >
-                  Special Request
-                </button>
+      <main className="flex-grow pt-16">
+        {/* Hero Section */}
+        <section className="bg-white px-6 pt-12 pb-4">
+          <div className="max-w-4xl mx-auto text-center md:text-left">
+            <h1 className="text-4xl md:text-5xl font-bold text-midnight mb-2 font-serif">
+              What are we baking today?
+            </h1>
+            <p className="text-slate-muted text-sm md:text-base font-medium mb-8">
+              Order fresh artisanal cakes delivered to your doorstep.
+            </p>
+            
+            {/* Search Input */}
+            <div className="max-w-2xl mx-auto md:mx-0 relative group mb-8">
+              <div className="absolute inset-y-0 left-0 pl-6 flex items-center pointer-events-none">
+                <i className="fa-solid fa-magnifying-glass text-slate-400 text-sm"></i>
               </div>
+              <input 
+                type="text"
+                placeholder="Search for cakes, cupcakes or pastries..."
+                className="w-full bg-[#f4f7f9] border border-transparent rounded-full pl-14 pr-6 py-4 text-sm focus:bg-white focus:border-slate-200 focus:shadow-sm outline-none transition-all placeholder:text-slate-400 font-medium"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
             </div>
           </div>
-
-          <button 
-            onClick={scrollToCatalogue}
-            className="absolute bottom-10 left-1/2 -translate-x-1/2 z-20 animate-bounce cursor-pointer opacity-70 hover:opacity-100 transition-opacity"
-          >
-            <i className="fa-solid fa-chevron-down text-white text-2xl"></i>
-          </button>
         </section>
 
-        <section 
-          id="catalogue" 
-          ref={catalogueRef}
-          className="max-w-7xl mx-auto px-6 py-24 relative scroll-mt-20"
-        >
-          <div className="flex flex-col md:flex-row md:items-end justify-between mb-16 gap-8">
-            <div className="max-w-xl text-center md:text-left">
-              <h2 className="text-4xl md:text-5xl font-serif text-midnight mb-6">Our Seasonal Collection</h2>
-              <p className="text-slate-500">Each piece is baked fresh daily using the finest organic dairy and Belgian chocolates.</p>
+        {/* Category Bar - Now static as requested */}
+        <section className="bg-white">
+          <div className="max-w-4xl mx-auto px-6 py-4">
+            <div className="flex overflow-x-auto gap-3 no-scrollbar pb-1">
+              {displayCategories.map(cat => (
+                <button
+                  key={cat}
+                  onClick={() => setActiveCategory(cat)}
+                  className={`px-8 py-2.5 rounded-full text-xs font-black uppercase tracking-widest whitespace-nowrap transition-all border ${
+                    activeCategory === cat 
+                    ? 'bg-midnight text-white border-midnight shadow-md' 
+                    : 'bg-white text-slate-400 border-[#eef2f5] hover:border-slate-300'
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
             </div>
-            
-            <div className="w-full md:w-auto overflow-hidden">
-                <div className="flex flex-nowrap gap-3 overflow-x-auto pb-4 no-scrollbar scroll-smooth">
-                {displayCategories.map(cat => (
-                    <button
-                    key={cat}
-                    onClick={() => setActiveCategory(cat)}
-                    className={`px-8 py-3 rounded-full text-sm font-bold uppercase tracking-widest transition duration-300 whitespace-nowrap shrink-0 ${
-                        activeCategory === cat 
-                        ? 'bg-rose-gold text-white shadow-lg shadow-rose-gold/20' 
-                        : 'bg-white text-slate-400 border border-slate-100 hover:border-rose-gold hover:text-rose-gold'
-                    }`}
-                    >
-                    {cat}
-                    </button>
-                ))}
-                </div>
-            </div>
+          </div>
+        </section>
+
+        {/* Product List Section */}
+        <section id="catalogue" className="max-w-4xl mx-auto px-6 py-8">
+          <div className="flex items-center justify-between mb-8">
+            <h2 className="text-2xl font-bold text-midnight font-serif">Featured Menu</h2>
+            <span className="text-[10px] font-black text-accent-emerald uppercase tracking-[0.2em]">
+              {filteredCakes.length} OPTIONS
+            </span>
           </div>
 
           {isLoading ? (
-            <div className="flex flex-col items-center justify-center py-20">
-               <div className="w-12 h-12 border-4 border-rose-gold border-t-transparent rounded-full animate-spin mb-4"></div>
-               <p className="text-slate-400 font-serif italic">Setting the table...</p>
+            <div className="flex flex-col items-center justify-center py-32">
+               <div className="w-8 h-8 border-3 border-accent-emerald border-t-transparent rounded-full animate-spin"></div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-8 gap-y-12">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-24 md:pb-12">
               {filteredCakes.map((cake, idx) => (
-                <div key={cake.id} className="animate-fade-up" style={{ animationDelay: `${0.1 * idx}s` }}>
-                  <CakeCard 
-                    cake={cake} 
-                    onAddToCart={addToCart} 
-                  />
+                <div key={cake.id} className="animate-fade-up" style={{ animationDelay: `${0.05 * idx}s` }}>
+                  <CakeCard cake={cake} onAddToCart={addToCart} />
                 </div>
               ))}
+              
+              {filteredCakes.length === 0 && (
+                <div className="col-span-full text-center py-20 bg-white rounded-4xl border border-dashed border-slate-200">
+                  <p className="text-slate-400 italic font-medium">No treats found matching your selection.</p>
+                </div>
+              )}
             </div>
           )}
         </section>
       </main>
+
+      {/* Floating Action Cart - Redesigned to match the screenshot provided */}
+      {cart.length > 0 && !isCartOpen && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 w-[calc(100%-3rem)] max-w-md z-[50]">
+            <button 
+                onClick={() => setIsCartOpen(true)}
+                className="w-full bg-[#FFB84C] hover:bg-[#ffa929] text-midnight py-4 rounded-2xl font-black shadow-[0_20px_50px_rgba(255,184,76,0.3)] flex items-center justify-between px-6 transition-all active:scale-95 border-b-4 border-[#e6a13c] group"
+            >
+                <div className="flex items-center gap-4">
+                    <span className="bg-midnight text-white w-7 h-7 rounded-full text-[11px] flex items-center justify-center font-black group-hover:scale-110 transition-transform">
+                        {cartCount}
+                    </span>
+                    <span className="uppercase text-[11px] tracking-[0.2em] font-black">View Bag</span>
+                </div>
+                <span className="font-black text-sm">
+                    UGX {cartTotal.toLocaleString()}
+                </span>
+            </button>
+        </div>
+      )}
 
       <Footer onStaffClick={() => setIsAdminOpen(true)} />
 
